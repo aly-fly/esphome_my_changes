@@ -1,10 +1,13 @@
+
+// ESPHOME TAG 2026.10.1
+
 #include "micronova.h"
 #include "esphome/core/log.h"
 
 namespace esphome::micronova {
 
 static const char *const TAG = "micronova";
-static constexpr uint8_t STOVE_REPLY_SIZE = 2;
+static constexpr uint8_t STOVE_REPLY_SIZE = 4;  // with echo
 static constexpr uint32_t STOVE_REPLY_TIMEOUT = 200;  // ms
 static constexpr uint8_t WRITE_BIT = 1 << 7;          // 0x80
 
@@ -161,22 +164,25 @@ void MicroNova::send_current_command_() {
   this->reply_pending_ = true;
 }
 
+// echo change start
 int MicroNova::read_stove_reply_() {
-  uint8_t reply_data[2] = {0, 0};
+  uint8_t reply_data[STOVE_REPLY_SIZE] = {0, 0, 0, 0};   // 2B for transmit echo, 2B for rx data
 
-  this->read_array(reply_data, 2);
+  this->read_array(reply_data, 4);
 
-  ESP_LOGV(TAG, "Reply from stove [%02X,%02X]", reply_data[0], reply_data[1]);
+  ESP_LOGV(TAG, "Received request [%02X,%02X] and reply from stove [%02X,%02X]", reply_data[0], reply_data[1], reply_data[2], reply_data[3]);
 
-  uint8_t checksum = this->current_command_.memory_location + this->current_command_.memory_address + reply_data[1];
-  if (reply_data[0] != checksum) {
+  uint8_t checksum = this->current_command_.memory_location + 
+                     this->current_command_.memory_address + reply_data[3];
+  if (reply_data[2] != checksum) {
     ESP_LOGE(TAG, "Checksum mismatch! From [0x%02X:0x%02X] received [0x%02X,0x%02X]. Expected 0x%02X, got 0x%02X",
-             this->current_command_.memory_location, this->current_command_.memory_address, reply_data[0],
-             reply_data[1], checksum, reply_data[0]);
+             this->current_command_.memory_location, this->current_command_.memory_address, reply_data[2],
+             reply_data[3], checksum, reply_data[2]);
     return -1;
   }
-  return ((int) reply_data[1]);
+  return ((int) reply_data[3]);
 }
+// echo change end
 
 #ifdef USE_MICRONOVA_WRITER
 bool MicroNova::queue_write_command(uint8_t location, uint8_t address, uint8_t data) {
